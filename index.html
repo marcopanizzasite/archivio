@@ -450,7 +450,7 @@
             id: "lez-2lsab-1",
             kind: "Lezione",
             date: "2026-11-18",
-            title: "Metodo di sostituzione e riduzione cciao",
+            title: "Metodo di sostituzione e riduzione",
             notes: "Appunti GoodNotes con esempi guidati e schemi",
             url: "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf"
           },
@@ -603,6 +603,7 @@
     ];
 
     const CLASSES = ["2LSAB", "3LSUA", "3LLA-LLB", "4LSUA"];
+    const ALL_CLASSES = "Tutte";
     const STORAGE_KEY = "archivio_lezioni_verifiche_v2";
 
     let topics = [];
@@ -725,8 +726,8 @@
     // Rendering Vista 1: Tab classi & lista argomenti (UNA SOLA RIGA COMPATTA PER ARGOMENTO)
     function renderClassTabs() {
       const container = document.getElementById("class-tabs");
-      container.innerHTML = CLASSES.map(cls => {
-        const count = topics.filter(t => t.className === cls).length;
+      container.innerHTML = [ALL_CLASSES, ...CLASSES].map(cls => {
+        const count = cls === ALL_CLASSES ? topics.length : topics.filter(t => t.className === cls).length;
         const selected = cls === activeClass;
         return `
           <button type="button" role="tab" aria-selected="${selected}" onclick="setClassTab('${escapeHtml(cls)}')"
@@ -735,7 +736,7 @@
                 ? "bg-blue-600 text-white border-blue-600"
                 : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
             }">
-            <span>${escapeHtml(cls)}</span>
+            <span>${escapeHtml(cls === ALL_CLASSES ? "Tutte le classi" : cls)}</span>
             <span class="px-1.5 py-0.5 rounded-md text-[11px] font-semibold ${
               selected ? "bg-blue-500 text-white" : "bg-slate-100 text-slate-600"
             }">${count}</span>
@@ -749,7 +750,7 @@
       const query = (document.getElementById("search-input").value || "").toLowerCase().trim();
 
       const filtered = topics.filter(topic => {
-        if (topic.className !== activeClass) return false;
+        if (activeClass !== ALL_CLASSES && topic.className !== activeClass) return false;
         if (activeSubject !== "Tutte" && topic.subject !== activeSubject) return false;
 
         const allItems = topic.items || [];
@@ -769,13 +770,17 @@
         return inTitle || inItems;
       });
 
+      if (activeClass === ALL_CLASSES) {
+        filtered.sort((a, b) => CLASSES.indexOf(a.className) - CLASSES.indexOf(b.className));
+      }
+
       if (filtered.length === 0) {
         const hint = isAdmin
           ? 'Cambia filtro oppure usa "+ Aggiungi" in alto per creare un argomento.'
           : "Prova a cambiare filtro o ricerca.";
         listEl.innerHTML = `
           <div class="border border-dashed border-slate-200 rounded-xl p-7 text-center">
-            <p class="text-xs sm:text-sm font-semibold text-slate-700">Nessun argomento trovato per ${escapeHtml(activeClass)}</p>
+            <p class="text-xs sm:text-sm font-semibold text-slate-700">Nessun argomento trovato${activeClass === ALL_CLASSES ? "" : " per " + escapeHtml(activeClass)}</p>
             <p class="text-xs text-slate-500 mt-1">${escapeHtml(hint)}</p>
           </div>
         `;
@@ -804,6 +809,7 @@
             onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openTopicDetail('${escapeHtml(topic.id)}')}"
             class="w-full bg-white hover:bg-slate-50/90 border border-slate-200 hover:border-blue-400 rounded-xl px-4 py-2.5 flex items-center justify-between gap-3 transition cursor-pointer group">
             <div class="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 min-w-0">
+              ${activeClass === ALL_CLASSES ? `<span class="px-2 py-0.5 rounded-md text-[11px] font-bold bg-slate-900 text-white w-fit shrink-0">${escapeHtml(topic.className)}</span>` : ""}
               <span class="px-2 py-0.5 rounded-md text-[11px] font-bold border w-fit shrink-0 ${badgeClasses}">
                 ${escapeHtml(topic.subject)}
               </span>
@@ -934,7 +940,7 @@
       document.getElementById("entry-kind-wrapper").classList.remove("hidden");
 
       const currentTopic = activeTopicId ? topics.find(t => t.id === activeTopicId) : null;
-      document.getElementById("form-class").value = currentTopic ? currentTopic.className : activeClass;
+      document.getElementById("form-class").value = currentTopic ? currentTopic.className : (activeClass === ALL_CLASSES ? CLASSES[0] : activeClass);
       document.getElementById("form-subject").value = currentTopic
         ? currentTopic.subject
         : (activeSubject !== "Tutte" ? activeSubject : "Matematica");
@@ -1129,7 +1135,7 @@
           items: []
         };
         topics.unshift(newTopic);
-        activeClass = className;
+        if (activeClass !== ALL_CLASSES) activeClass = className;
         persistTopics();
         closeAddModal();
 
@@ -1167,7 +1173,7 @@
       };
 
       targetTopic.items.push(newItem);
-      activeClass = targetTopic.className;
+      if (activeClass !== ALL_CLASSES) activeClass = targetTopic.className;
       persistTopics();
       closeAddModal();
 
