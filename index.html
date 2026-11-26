@@ -399,23 +399,27 @@
     }
 
     function initAdmin() {
-      try {
-        const params = new URLSearchParams(location.search);
-        if (params.get("docente") === CODICE_DOCENTE) {
-          localStorage.setItem(ADMIN_FLAG_KEY, "1");
-        }
-        if (params.get("esci") === "1") {
-          localStorage.removeItem(ADMIN_FLAG_KEY);
-        }
-        setAdmin(localStorage.getItem(ADMIN_FLAG_KEY) === "1");
+      const params = new URLSearchParams(location.search);
+      let fromUrl = params.get("docente") === CODICE_DOCENTE;
+      let stored = false;
 
-        // Toglie il codice dall'indirizzo visibile dopo l'attivazione
+      try {
+        if (fromUrl) localStorage.setItem(ADMIN_FLAG_KEY, "1");
+        if (params.get("esci") === "1") localStorage.removeItem(ADMIN_FLAG_KEY);
+        stored = localStorage.getItem(ADMIN_FLAG_KEY) === "1";
+      } catch (err) {
+        stored = false; // memoria locale bloccata: vale solo il link
+      }
+
+      if (params.get("esci") === "1") fromUrl = false;
+      setAdmin(fromUrl || stored);
+
+      // Toglie il codice dall'indirizzo visibile dopo l'attivazione
+      try {
         if (params.has("docente") || params.has("esci")) {
           history.replaceState(null, "", location.pathname);
         }
-      } catch (err) {
-        setAdmin(false);
-      }
+      } catch (_) {}
     }
 
     function logoutAdmin() {
