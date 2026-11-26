@@ -88,6 +88,11 @@
     <!-- VISTA 1: ELENCO ARGOMENTI (UNA RIGA COMPATTA PER ARGOMENTO) -->
     <section id="view-topics" class="space-y-4">
 
+      <!-- Selettore anno scolastico -->
+      <div class="flex flex-wrap items-center gap-2" id="year-tabs" role="tablist" aria-label="Selezione anno scolastico">
+        <!-- Popolato da JS -->
+      </div>
+
       <!-- Selettore classi a tab -->
       <div class="flex flex-wrap items-center gap-2" id="class-tabs" role="tablist" aria-label="Selezione classe">
         <!-- Popolato da JS -->
@@ -266,17 +271,22 @@
           </div>
         </div>
 
-        <!-- Classe e Materia -->
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <!-- Anno scolastico, Classe e Materia -->
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div>
+            <label for="form-year" class="block text-xs font-semibold text-slate-700 mb-1">Anno scolastico</label>
+            <select id="form-year" onchange="onYearChange()"
+              class="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"></select>
+            <input type="text" id="form-year-new" placeholder="Es. 2027/28" oninput="syncTopicSelectorOptions()"
+              class="hidden mt-2 w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          </div>
+
           <div>
             <label for="form-class" class="block text-xs font-semibold text-slate-700 mb-1">Classe</label>
-            <select id="form-class" onchange="syncTopicSelectorOptions()"
-              class="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500">
-              <option value="2LSAB">2LSAB</option>
-              <option value="3LSUA">3LSUA</option>
-              <option value="3LLA-LLB">3LLA-LLB</option>
-              <option value="4LSUA">4LSUA</option>
-            </select>
+            <select id="form-class" onchange="onClassChange()"
+              class="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"></select>
+            <input type="text" id="form-class-new" placeholder="Es. 2LSAB" oninput="syncTopicSelectorOptions()"
+              class="hidden mt-2 w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500" />
           </div>
 
           <div>
@@ -602,11 +612,14 @@
       }
     ];
 
-    const CLASSES = ["2LSAB", "3LSUA", "3LLA-LLB", "4LSUA"];
+    const CLASS_ORDER = ["2LSAB", "3LSUA", "3LLA-LLB", "4LSUA"]; // ordine preferito delle classi note
     const ALL_CLASSES = "Tutte";
+    const LEGACY_YEAR = "2026/27"; // anno assegnato ai dati inseriti prima dell'introduzione degli anni
+    const NEW_OPTION = "__nuovo__";
     const STORAGE_KEY = "archivio_lezioni_verifiche_v2";
 
     let topics = [];
+    let activeYear = null;
     let activeClass = ALL_CLASSES;
     let activeSubject = "Tutte";
     let activeKindFilter = "Tutti"; // "Tutti" | "Solo Lezioni" | "Solo Verifiche"
@@ -633,7 +646,8 @@
     function normalizeTopics(list) {
       return list.map((t, idx) => ({
         id: t.id || `arg-${Date.now()}-${idx}`,
-        className: CLASSES.includes(t.className) ? t.className : "2LSAB",
+        year: String(t.year || LEGACY_YEAR).trim() || LEGACY_YEAR,
+        className: String(t.className || "Senza classe").trim() || "Senza classe",
         subject: t.subject === "Fisica" ? "Fisica" : "Matematica",
         title: String(t.title || "Argomento senza titolo"),
         items: Array.isArray(t.items) ? t.items.map((it, j) => ({
@@ -666,6 +680,83 @@
       lucide.createIcons();
       clearTimeout(window._toastTimer);
       window._toastTimer = setTimeout(() => toast.classList.add("hidden"), 2600);
+    }
+
+    // Anni scolastici e classi: tutto deriva dagli argomenti salvati
+    function compareClasses(a, b) {
+      const ia = CLASS_ORDER.indexOf(a);
+      const ib = CLASS_ORDER.indexOf(b);
+      if (ia !== -1 || ib !== -1) {
+        if (ia === -1) return 1;
+        if (ib === -1) return -1;
+        return ia - ib;
+      }
+      return a.localeCompare(b, "it", { numeric: true });
+    }
+
+    function getYears() {
+      return [...new Set(topics.map(t => t.year))]
+        .sort((a, b) => b.localeCompare(a, "it", { numeric: true }));
+    }
+
+    function getClassesForYear(year) {
+      return [...new Set(topics.filter(t => t.year === year).map(t => t.className))].sort(compareClasses);
+    }
+
+    function getAllKnownClasses() {
+      return [...new Set(topics.map(t => t.className))].sort(compareClasses);
+    }
+
+    function nextSchoolYear(year) {
+      const m = /^(\d{4})\s*\/\s*(\d{2,4})$/.exec(year || "");
+      if (!m) return "";
+      const start = parseInt(m[1], 10) + 1;
+      return `${start}/${String((start + 1) % 100).padStart(2, "0")}`;
+    }
+
+    function ensureValidSelection() {
+      const years = getYears();
+      if (years.length === 0) {
+        activeYear = null;
+        activeClass = ALL_CLASSES;
+        return;
+      }
+      if (!activeYear || !years.includes(activeYear)) {
+        activeYear = years[0]; // l'anno piu' recente
+        activeClass = ALL_CLASSES;
+      }
+      if (activeClass !== ALL_CLASSES && !getClassesForYear(activeYear).includes(activeClass)) {
+        activeClass = ALL_CLASSES;
+      }
+    }
+
+    function renderYearTabs() {
+      ensureValidSelection();
+      const container = document.getElementById("year-tabs");
+      const years = getYears();
+      if (years.length === 0) {
+        container.innerHTML = "";
+        return;
+      }
+      container.innerHTML = `<span class="text-xs font-semibold text-slate-500 mr-1">Anno scolastico</span>` + years.map(y => {
+        const selected = y === activeYear;
+        return `
+          <button type="button" role="tab" aria-selected="${selected}" onclick="setYearTab(${escapeHtml(JSON.stringify(y))})"
+            class="inline-flex items-center px-3.5 py-1.5 rounded-xl text-xs sm:text-sm font-bold border transition cursor-pointer ${
+              selected
+                ? "bg-slate-900 text-white border-slate-900"
+                : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
+            }">${escapeHtml(y)}</button>
+        `;
+      }).join("");
+    }
+
+    function setYearTab(year) {
+      activeYear = year;
+      activeClass = ALL_CLASSES;
+      renderYearTabs();
+      renderClassTabs();
+      renderTopicsList();
     }
 
     // Navigazione e filtri
@@ -719,18 +810,21 @@
       document.getElementById("view-topic-detail").classList.add("hidden");
       document.getElementById("view-topics").classList.remove("hidden");
       syncKindFilterButtons();
+      renderYearTabs();
       renderClassTabs();
       renderTopicsList();
     }
 
     // Rendering Vista 1: Tab classi & lista argomenti (UNA SOLA RIGA COMPATTA PER ARGOMENTO)
     function renderClassTabs() {
+      ensureValidSelection();
       const container = document.getElementById("class-tabs");
-      container.innerHTML = [ALL_CLASSES, ...CLASSES].map(cls => {
-        const count = cls === ALL_CLASSES ? topics.length : topics.filter(t => t.className === cls).length;
+      const yearTopics = topics.filter(t => t.year === activeYear);
+      container.innerHTML = [ALL_CLASSES, ...getClassesForYear(activeYear)].map(cls => {
+        const count = cls === ALL_CLASSES ? yearTopics.length : yearTopics.filter(t => t.className === cls).length;
         const selected = cls === activeClass;
         return `
-          <button type="button" role="tab" aria-selected="${selected}" onclick="setClassTab('${escapeHtml(cls)}')"
+          <button type="button" role="tab" aria-selected="${selected}" onclick="setClassTab(${escapeHtml(JSON.stringify(cls))})"
             class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs sm:text-sm font-bold border transition cursor-pointer ${
               selected
                 ? "bg-blue-600 text-white border-blue-600"
@@ -746,10 +840,12 @@
     }
 
     function renderTopicsList() {
+      ensureValidSelection();
       const listEl = document.getElementById("topics-list");
       const query = (document.getElementById("search-input").value || "").toLowerCase().trim();
 
       const filtered = topics.filter(topic => {
+        if (topic.year !== activeYear) return false;
         if (activeClass !== ALL_CLASSES && topic.className !== activeClass) return false;
         if (activeSubject !== "Tutte" && topic.subject !== activeSubject) return false;
 
@@ -771,7 +867,7 @@
       });
 
       if (activeClass === ALL_CLASSES) {
-        filtered.sort((a, b) => CLASSES.indexOf(a.className) - CLASSES.indexOf(b.className));
+        filtered.sort((a, b) => compareClasses(a.className, b.className));
       }
 
       if (filtered.length === 0) {
@@ -849,6 +945,7 @@
 
       document.getElementById("detail-header").innerHTML = `
         <div class="flex items-center gap-2 flex-wrap">
+          <span class="px-2 py-0.5 rounded-md text-[11px] font-bold bg-white text-slate-600 border border-slate-300">${escapeHtml(topic.year)}</span>
           <span class="px-2 py-0.5 rounded-md text-[11px] font-bold bg-slate-900 text-white">${escapeHtml(topic.className)}</span>
           <span class="px-2 py-0.5 rounded-md text-[11px] font-bold border ${badgeClasses}">${escapeHtml(topic.subject)}</span>
         </div>
@@ -940,7 +1037,10 @@
       document.getElementById("entry-kind-wrapper").classList.remove("hidden");
 
       const currentTopic = activeTopicId ? topics.find(t => t.id === activeTopicId) : null;
-      document.getElementById("form-class").value = currentTopic ? currentTopic.className : (activeClass === ALL_CLASSES ? CLASSES[0] : activeClass);
+      buildYearOptions(currentTopic ? currentTopic.year : activeYear);
+      buildClassOptions(currentTopic
+        ? currentTopic.className
+        : (activeClass !== ALL_CLASSES ? activeClass : (getClassesForYear(activeYear)[0] || null)));
       document.getElementById("form-subject").value = currentTopic
         ? currentTopic.subject
         : (activeSubject !== "Tutte" ? activeSubject : "Matematica");
@@ -976,7 +1076,8 @@
       document.getElementById("add-modal-title").textContent = "Modifica argomento";
 
       setAddEntryKind("Argomento");
-      document.getElementById("form-class").value = topic.className;
+      buildYearOptions(topic.year);
+      buildClassOptions(topic.className);
       document.getElementById("form-subject").value = topic.subject;
       document.getElementById("form-title").value = topic.title;
 
@@ -1001,7 +1102,8 @@
 
       setAddEntryKind(item.kind);
       document.getElementById("add-modal-title").textContent = item.kind === "Verifica" ? "Modifica verifica finale" : "Modifica lezione";
-      document.getElementById("form-class").value = topic.className;
+      buildYearOptions(topic.year);
+      buildClassOptions(topic.className);
       document.getElementById("form-subject").value = topic.subject;
       syncTopicSelectorOptions(topic.id);
 
@@ -1049,18 +1151,80 @@
       }
     }
 
+    function toggleNewField(selectId, inputId, suggestion) {
+      const isNew = document.getElementById(selectId).value === NEW_OPTION;
+      const input = document.getElementById(inputId);
+      input.classList.toggle("hidden", !isNew);
+      input.required = isNew;
+      if (isNew && !input.value && suggestion) input.value = suggestion;
+      if (!isNew) input.value = "";
+    }
+
+    function buildYearOptions(selectedYear) {
+      const sel = document.getElementById("form-year");
+      const years = getYears();
+      sel.innerHTML = years.map(y => `<option value="${escapeHtml(y)}">${escapeHtml(y)}</option>`).join("")
+        + `<option value="${NEW_OPTION}">+ Nuovo anno scolastico…</option>`;
+      if (selectedYear && years.includes(selectedYear)) {
+        sel.value = selectedYear;
+      } else {
+        sel.value = years.length ? years[0] : NEW_OPTION;
+      }
+      document.getElementById("form-year-new").value = "";
+      toggleNewField("form-year", "form-year-new", nextSchoolYear(years[0]) || LEGACY_YEAR);
+    }
+
+    function buildClassOptions(selectedClass) {
+      const sel = document.getElementById("form-class");
+      const classes = getAllKnownClasses();
+      sel.innerHTML = classes.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join("")
+        + `<option value="${NEW_OPTION}">+ Nuova classe…</option>`;
+      if (selectedClass && classes.includes(selectedClass)) {
+        sel.value = selectedClass;
+      } else {
+        sel.value = classes.length ? classes[0] : NEW_OPTION;
+      }
+      document.getElementById("form-class-new").value = "";
+      toggleNewField("form-class", "form-class-new", "");
+    }
+
+    function getFormYear() {
+      const sel = document.getElementById("form-year");
+      return sel.value === NEW_OPTION
+        ? document.getElementById("form-year-new").value.trim()
+        : sel.value;
+    }
+
+    function getFormClass() {
+      const sel = document.getElementById("form-class");
+      return sel.value === NEW_OPTION
+        ? document.getElementById("form-class-new").value.trim()
+        : sel.value;
+    }
+
+    function onYearChange() {
+      toggleNewField("form-year", "form-year-new", nextSchoolYear(getYears()[0]) || LEGACY_YEAR);
+      syncTopicSelectorOptions();
+    }
+
+    function onClassChange() {
+      toggleNewField("form-class", "form-class-new", "");
+      syncTopicSelectorOptions();
+    }
+
     function syncTopicSelectorOptions(preferredTopicId = null) {
-      const cls = document.getElementById("form-class").value;
+      const year = getFormYear();
+      const cls = getFormClass();
       const subj = document.getElementById("form-subject").value;
       const selectEl = document.getElementById("form-topic-id");
 
-      let matching = topics.filter(t => t.className === cls && t.subject === subj);
+      let matching = topics.filter(t => t.year === year && t.className === cls && t.subject === subj);
       if (matching.length === 0) {
-        matching = topics.filter(t => t.className === cls);
+        matching = topics.filter(t => t.year === year && t.className === cls);
       }
 
       if (matching.length === 0) {
-        selectEl.innerHTML = `<option value="__NEW_DEFAULT__">Argomento generale (${cls} - ${subj})</option>`;
+        selectEl.innerHTML = `<option value="__NEW_DEFAULT__">Argomento generale (${escapeHtml(cls || "nuova classe")} - ${escapeHtml(subj)})</option>`;
         return;
       }
 
@@ -1085,14 +1249,20 @@
 
       const editMode = document.getElementById("edit-mode-type").value;
       const editId = document.getElementById("edit-target-id").value;
-      const className = document.getElementById("form-class").value;
+      const year = getFormYear();
+      const className = getFormClass();
       const subject = document.getElementById("form-subject").value;
       const title = document.getElementById("form-title").value.trim();
       if (!title) return;
+      if (editMode !== "edit-item" && (!year || !className)) {
+        showToast("Indica anno scolastico e classe.", true);
+        return;
+      }
 
       if (editMode === "edit-topic") {
         const target = topics.find(t => t.id === editId);
         if (target) {
+          target.year = year;
           target.className = className;
           target.subject = subject;
           target.title = title;
@@ -1129,12 +1299,14 @@
       if (currentAddKind === "Argomento") {
         const newTopic = {
           id: `arg-${Date.now()}`,
+          year,
           className,
           subject,
           title,
           items: []
         };
         topics.unshift(newTopic);
+        activeYear = year;
         if (activeClass !== ALL_CLASSES) activeClass = className;
         persistTopics();
         closeAddModal();
@@ -1142,6 +1314,7 @@
         if (activeTopicId) {
           openTopicDetail(newTopic.id);
         } else {
+          renderYearTabs();
           renderClassTabs();
           renderTopicsList();
         }
@@ -1155,6 +1328,7 @@
       if (!targetTopic) {
         targetTopic = {
           id: `arg-${Date.now()}`,
+          year,
           className,
           subject,
           title: `Programma di ${subject}`,
@@ -1173,6 +1347,7 @@
       };
 
       targetTopic.items.push(newItem);
+      activeYear = targetTopic.year;
       if (activeClass !== ALL_CLASSES) activeClass = targetTopic.className;
       persistTopics();
       closeAddModal();
@@ -1329,6 +1504,8 @@
     window.addEventListener("DOMContentLoaded", () => {
       initAdmin();
       loadTopics();
+      ensureValidSelection();
+      renderYearTabs();
       renderClassTabs();
       renderTopicsList();
       lucide.createIcons();
